@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Сравнение Январь-Март 2025 vs 2026</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="container">
+    <h1>Сравнение Январь-Март 2025 → 2026</h1>
+    <p class="subtitle">Анализ по столбцу <strong>F</strong></p>
+
+    <div class="upload-section">
+      <div class="upload-box">
+        <h3>Файл 1 — Январь-Март 2025</h3>
+        <input type="file" id="file1" accept=".xlsx,.xls">
+      </div>
+
+      <div class="upload-box">
+        <h3>Файл 2 — Январь-Март 2026</h3>
+        <input type="file" id="file2" accept=".xlsx,.xls">
+      </div>
+    </div>
+
+    <center>
+      <button onclick="analyzeFiles()">Анализировать файлы</button>
+    </center>
+
+    <div id="result" class="result"></div>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <script src="script.js"></script>
+</body>
+</html>
