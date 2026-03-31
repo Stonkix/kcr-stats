@@ -3,28 +3,35 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Сравнение Январь-Март 2025 vs 2026</title>
+  <title>Анализ Выгрузок</title>
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
   <div class="container">
-    <h1>Сравнение Январь-Март 2025 → 2026</h1>
-    <p class="subtitle">Анализ по столбцу <strong>F</strong></p>
+    <header>
+      <h1>Сравнение Выгрузок</h1>
+    </header>
 
-    <div class="upload-section">
-      <div class="upload-box">
-        <h3>Файл 1 — Январь-Март 2025</h3>
-        <input type="file" id="file1" accept=".xlsx,.xls">
+    <div class="cards-container">
+      <div class="upload-card" id="card1">
+        <div class="card-icon">📁</div>
+        <h3>Файл 1</h3>
+        <p class="period" id="period1">Ожидание файла...</p>
+        <input type="file" id="file1" accept=".xlsx,.xls" onchange="handleFileSelect(1)">
+        <div class="status" id="status1">Нажмите или перетащите файл</div>
       </div>
 
-      <div class="upload-box">
-        <h3>Файл 2 — Январь-Март 2026</h3>
-        <input type="file" id="file2" accept=".xlsx,.xls">
+      <div class="upload-card" id="card2">
+        <div class="card-icon">📁</div>
+        <h3>Файл 2</h3>
+        <p class="period" id="period2">Ожидание файла...</p>
+        <input type="file" id="file2" accept=".xlsx,.xls" onchange="handleFileSelect(2)">
+        <div class="status" id="status2">Нажмите или перетащите файл</div>
       </div>
     </div>
 
     <center>
-      <button onclick="analyzeFiles()">Анализировать файлы</button>
+      <button id="analyzeBtn" onclick="analyzeFiles()" disabled>🚀 Сравнить файлы</button>
     </center>
 
     <div id="result" class="result"></div>

@@ -1,0 +1,175 @@
+* { box-sizing: border-box; }
+
+body {
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  background: linear-gradient(135deg, #f0f9ff, #e0f2fe);
+  margin: 0;
+  padding: 30px 20px;
+  color: #1e2937;
+}
+
+.container {
+  max-width: 1100px;
+  margin: 0 auto;
+  background: white;
+  padding: 40px;
+  border-radius: 24px;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+}
+
+header {
+  text-align: center;
+  margin-bottom: 45px;
+}
+
+h1 {
+  font-size: 2.6em;
+  margin: 0;
+  background: linear-gradient(90deg, #1e40af, #60a5fa);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.subtitle {
+  color: #64748b;
+  font-size: 1.25em;
+  margin-top: 8px;
+}
+
+.cards-container {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 30px;
+  margin-bottom: 40px;
+}
+
+.upload-card {
+  border: 3px dashed #cbd5e1;
+  border-radius: 20px;
+  padding: 35px 25px;
+  text-align: center;
+  transition: all 0.4s ease;
+  background: #f8fafc;
+  position: relative;
+  cursor: pointer;
+}
+
+.upload-card:hover {
+  border-color: #3b82f6;
+  background: #f0f9ff;
+  transform: translateY(-8px);
+}
+
+.upload-card input[type="file"] {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.card-icon {
+  font-size: 4.5em;
+  margin-bottom: 15px;
+  transition: transform 0.3s;
+}
+
+.upload-card:hover .card-icon {
+  transform: scale(1.15);
+}
+
+.upload-card h3 {
+  margin: 0 0 8px 0;
+  font-size: 1.4em;
+  color: #1e40af;
+}
+
+.period {
+  color: #3b82f6;
+  font-weight: 600;
+  margin: 8px 0 20px 0;
+  font-size: 1.1em;
+}
+
+.status {
+  margin-top: 15px;
+  padding: 12px 20px;
+  background: white;
+  border-radius: 12px;
+  font-size: 0.98em;
+  color: #64748b;
+  border: 1px solid #e2e8f0;
+}
+
+button {
+  background: linear-gradient(90deg, #1e40af, #3b82f6);
+  color: white;
+  padding: 18px 50px;
+  font-size: 1.2em;
+  font-weight: 600;
+  border: none;
+  border-radius: 16px;
+  cursor: pointer;
+  box-shadow: 0 10px 25px rgba(30, 64, 175, 0.35);
+  transition: all 0.3s ease;
+}
+
+button:hover:not(:disabled) {
+  transform: translateY(-4px);
+  box-shadow: 0 15px 30px rgba(30, 64, 175, 0.45);
+}
+
+button:disabled {
+  background: linear-gradient(90deg, #3b82f6, #60a5fa); /* Оставляем синим, но чуть светлее */
+  opacity: 0.8;
+  cursor: wait; /* Курсор ожидания вместо знака "запрещено" */
+  transform: scale(0.98); /* Слегка уменьшаем, как будто она нажата */
+  box-shadow: none;
+}
+
+button:focus {
+  outline: none;
+}
+
+.result {
+  display: none;
+  margin-top: 40px;
+  padding: 30px;
+  background: #f8fafc;
+  border-radius: 20px;
+}
+
+/* ... (весь предыдущий код CSS остается) ... */
+
+.center {
+  text-align: center;
+}
+
+.result-table {
+  margin: 0 auto; /* Центрирование таблицы */
+  border-collapse: collapse;
+  width: 100%;
+  max-width: 600px;
+  background: white;
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.result-table th, .result-table td {
+  padding: 15px;
+  border: 1px solid #e2e8f0;
+  text-align: left;
+}
+
+.result-table th {
+  background: #f1f5f9;
+  color: #475569;
+}
+
+.highlight {
+  background: #f8fafc;
+}
+
+.highlight.green {
+  background: #f0fdf4;
+  color: #166534;
+}
