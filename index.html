@@ -5,34 +5,72 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Анализ Выгрузок</title>
   <link rel="stylesheet" href="styles.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 </head>
 <body>
   <div class="container">
     <header>
       <h1>Сравнение Выгрузок</h1>
+      <p class="subtitle">Один большой файл (до 100 МБ). Поддержка ZIP.</p>
     </header>
 
     <div class="cards-container">
       <div class="upload-card" id="card1">
         <div class="card-icon">📁</div>
-        <h3>Файл 1</h3>
-        <p class="period" id="period1">Ожидание файла...</p>
-        <input type="file" id="file1" accept=".xlsx,.xls" onchange="handleFileSelect(1)">
+        <h3>Файл выгрузки</h3>
+        <p class="period" id="period1">xlsx, xls или zip (с Excel внутри)</p>
+        <input type="file" id="file1" accept=".xlsx,.xls,.zip" onchange="handleUpload()">
         <div class="status" id="status1">Нажмите или перетащите файл</div>
-      </div>
-
-      <div class="upload-card" id="card2">
-        <div class="card-icon">📁</div>
-        <h3>Файл 2</h3>
-        <p class="period" id="period2">Ожидание файла...</p>
-        <input type="file" id="file2" accept=".xlsx,.xls" onchange="handleFileSelect(2)">
-        <div class="status" id="status2">Нажмите или перетащите файл</div>
       </div>
     </div>
 
-    <center>
-      <button id="analyzeBtn" onclick="analyzeFiles()" disabled>🚀 Сравнить файлы</button>
-    </center>
+    <div id="loaded-config" style="display: none;">
+      <div id="general-stats" class="result" style="display: none; margin-bottom: 40px;"></div>
+
+      <div class="filters-section">
+        <h3 style="text-align: center; margin-bottom: 20px;">Фильтры (применяются только к сравнению)</h3>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 40px;">
+          <div>
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+              <h4>Тарифы</h4>
+              <button type="button" id="kcr-button" onclick="toggleKCR()" 
+                      style="font-size:0.9em; padding:6px 14px; background:#ef4444; color:white; border:none; border-radius:8px; cursor:pointer;">
+                Убрать КЦР
+              </button>
+            </div>
+            <div id="q-filters" class="checkbox-group"></div>
+          </div>
+
+          <div>
+            <h4>Специальное предложение</h4>
+            <div id="u-main" class="checkbox-group" style="margin-bottom:20px;"></div>
+            <h4 style="margin:15px 0 8px 0; color:#1e40af;">Группа KCR(Специальное предложение)</h4>
+            <div id="u-kcr" class="checkbox-group"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="periods-container">
+        <div>
+          <h3>Период 1</h3>
+          <div style="display: flex; flex-direction: column; gap: 15px;">
+            <label style="font-weight: 600;">Начало <input type="date" id="p1-start" style="width: 100%; padding: 12px; border-radius: 12px; border: 2px solid #e2e8f0;"></label>
+            <label style="font-weight: 600;">Конец <input type="date" id="p1-end" style="width: 100%; padding: 12px; border-radius: 12px; border: 2px solid #e2e8f0;"></label>
+          </div>
+        </div>
+        <div>
+          <h3>Период 2</h3>
+          <div style="display: flex; flex-direction: column; gap: 15px;">
+            <label style="font-weight: 600;">Начало <input type="date" id="p2-start" style="width: 100%; padding: 12px; border-radius: 12px; border: 2px solid #e2e8f0;"></label>
+            <label style="font-weight: 600;">Конец <input type="date" id="p2-end" style="width: 100%; padding: 12px; border-radius: 12px; border: 2px solid #e2e8f0;"></label>
+          </div>
+        </div>
+      </div>
+
+      <center style="margin-top: 40px;">
+        <button id="analyzeBtn" onclick="analyzeFiles()" disabled>🚀 Сравнить периоды</button>
+      </center>
+    </div>
 
     <div id="result" class="result"></div>
   </div>
