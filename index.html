@@ -35,18 +35,10 @@
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
               <h4>Тарифы</h4>
               <div style="display:flex; gap:8px;">
-                <button type="button" onclick="selectAllQ(true)"
-                        style="font-size:0.8em; padding:4px 10px; background:#3b82f6; color:white; border:none; border-radius:6px; cursor:pointer; box-shadow:none; transform:none;">Все</button>
-                <button type="button" onclick="selectAllQ(false)"
-                        style="font-size:0.8em; padding:4px 10px; background:#94a3b8; color:white; border:none; border-radius:6px; cursor:pointer; box-shadow:none; transform:none;">Ни одного</button>
-                <button type="button" id="kcr-button" onclick="toggleKCR()"
-                        style="font-size:0.9em; padding:6px 14px; background:#ef4444; color:white; border:none; border-radius:8px; cursor:pointer;">
-                  Убрать КЦР
-                </button>
-                <button type="button" onclick="filterKCROnly()"
-                        style="font-size:0.9em; padding:6px 14px; background:#7c3aed; color:white; border:none; border-radius:8px; cursor:pointer;">
-                  Только КЦР
-                </button>
+                <button type="button" onclick="selectAllQ(true)" style="font-size:0.8em; padding:4px 10px; background:#3b82f6; color:white; border:none; border-radius:6px; cursor:pointer;">Все</button>
+                <button type="button" onclick="selectAllQ(false)" style="font-size:0.8em; padding:4px 10px; background:#94a3b8; color:white; border:none; border-radius:6px; cursor:pointer;">Ни одного</button>
+                <button type="button" id="kcr-button" onclick="toggleKCR()" style="font-size:0.9em; padding:6px 14px; background:#ef4444; color:white; border:none; border-radius:8px; cursor:pointer;">Убрать КЦР</button>
+                <button type="button" onclick="filterKCROnly()" style="font-size:0.9em; padding:6px 14px; background:#7c3aed; color:white; border:none; border-radius:8px; cursor:pointer;">Только КЦР</button>
               </div>
             </div>
             <div id="q-filters" class="checkbox-group"></div>
@@ -56,10 +48,8 @@
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
               <h4 style="margin:0;">Специальное предложение</h4>
               <div style="display:flex; gap:8px;">
-                <button type="button" onclick="selectAllU(true)"
-                        style="font-size:0.8em; padding:4px 10px; background:#3b82f6; color:white; border:none; border-radius:6px; cursor:pointer; box-shadow:none; transform:none;">Все</button>
-                <button type="button" onclick="selectAllU(false)"
-                        style="font-size:0.8em; padding:4px 10px; background:#94a3b8; color:white; border:none; border-radius:6px; cursor:pointer; box-shadow:none; transform:none;">Ни одного</button>
+                <button type="button" onclick="selectAllU(true)" style="font-size:0.8em; padding:4px 10px; background:#3b82f6; color:white; border:none; border-radius:6px; cursor:pointer;">Все</button>
+                <button type="button" onclick="selectAllU(false)" style="font-size:0.8em; padding:4px 10px; background:#94a3b8; color:white; border:none; border-radius:6px; cursor:pointer;">Ни одного</button>
               </div>
             </div>
             <div id="u-main" class="checkbox-group" style="margin-bottom:20px;"></div>
@@ -68,10 +58,13 @@
           </div>
         </div>
 
-        <div style="margin-top: 30px;">
-          <div id="aa-filter-container"></div>
-        </div>
+        <!-- Удостоверяющий центр -->
+        <div style="margin-top: 30px;" id="aa-filter-container"></div>
 
+        <!-- Удаленная схема -->
+        <div style="margin-top: 30px;" id="remote-filter-container"></div>
+
+        <!-- Период возврата -->
         <div style="margin-top: 30px; padding: 20px; background: #f8fafc; border-radius: 16px; border: 1px solid #e2e8f0;">
           <h4 style="margin: 0 0 12px 0;">Критерий удержания / отвала</h4>
           <p style="font-size:0.9em; color:#64748b; margin:0 0 14px 0;">
@@ -79,12 +72,18 @@
             <strong>Удержался</strong> — купил после окончания, но в рамках периода возврата.<br>
             <strong>Отвалился</strong> — не вернулся или вернулся позже периода возврата.
           </p>
-          <label style="font-weight: 600; display:flex; align-items:center; gap:12px;">
+          <label style="font-weight: 600; display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
             Период возврата:
-            <select id="grace-period" style="padding:10px 16px; border-radius:12px; border:2px solid #e2e8f0; font-size:1em;">
-              <option value="90">Квартал (90 дней)</option>
-              <option value="365">Год (365 дней)</option>
+            <select id="grace-period" onchange="handleGracePeriodChange()" style="padding:10px 16px; border-radius:12px; border:2px solid #e2e8f0; font-size:1em;">
+              <option value="90">90 дней (квартал)</option>
+              <option value="180">180 дней (полгода)</option>
+              <option value="365">365 дней (год)</option>
+              <option value="custom">Ввести вручную...</option>
             </select>
+            <span id="grace-custom-wrap" style="display:none; align-items:center; gap:8px;">
+              <input type="number" id="grace-custom" placeholder="например 120" min="0" style="width:180px; padding:10px 12px; border-radius:12px; border:2px solid #e2e8f0;">
+              <span style="color:#64748b;">дней</span>
+            </span>
           </label>
         </div>
       </div>

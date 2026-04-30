@@ -19,15 +19,19 @@ function detectColumns(headerRow) {
     "тариф":                   "Q",
     "снилс":                   "J",
     "инн":                     "F",
+    "удаленная схема":         "REMOTE"
   };
+
   const result = {};
   headerRow.forEach((cell, idx) => {
     const key = String(cell || "").trim().toLowerCase();
     if (MAP[key]) result[MAP[key]] = idx;
   });
+
   const required = ["V", "END", "AA", "U", "Q", "J", "F"];
   const missing = required.filter(k => result[k] === undefined);
   if (missing.length) console.warn("Не найдены колонки:", missing);
+
   return result;
 }
 
@@ -110,6 +114,7 @@ async function handleUpload() {
   }
 }
 
+// ====================== ФИЛЬТРЫ ======================
 function populateFilters() {
   // Тарифы
   document.getElementById("q-filters").innerHTML = uniqueTariffs.map(val =>
@@ -119,11 +124,13 @@ function populateFilters() {
   // Специальные предложения
   const main = [], kcr = [];
   uniqueUValues.forEach(val => {
-    val.toUpperCase().includes("KCR") ? kcr.push(val) : main.push(val);
+    val.toUpperCase().includes("KCR") || val.toUpperCase().includes("КЦР") ? kcr.push(val) : main.push(val);
   });
+
   document.getElementById("u-main").innerHTML = main.map(val =>
     `<label><input type="checkbox" value="${val.replace(/"/g, "&quot;")}" checked> ${val}</label>`
   ).join("");
+
   document.getElementById("u-kcr").innerHTML = kcr.map(val =>
     `<label><input type="checkbox" value="${val.replace(/"/g, "&quot;")}" checked> ${val}</label>`
   ).join("");
@@ -135,20 +142,116 @@ function populateFilters() {
       .filter(v => v && v !== EXCLUDED_UC)
   )).sort((a, b) => a.localeCompare(b, 'ru'));
 
-  const aaContainer = document.getElementById("aa-filter-container");
-  if (aaContainer) {
-    aaContainer.innerHTML = `
-      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
-        <h4 style="margin:0;">Удостоверяющий центр <small style="font-weight:400; color:#64748b;">(% считается только по отмеченным)</small></h4>
-        <div style="display:flex; gap:8px;">
-          <button type="button" onclick="selectAllAA(true)" style="font-size:0.8em; padding:4px 10px; background:#3b82f6; color:white; border:none; border-radius:6px; cursor:pointer;">Все</button>
-          <button type="button" onclick="selectAllAA(false)" style="font-size:0.8em; padding:4px 10px; background:#94a3b8; color:white; border:none; border-radius:6px; cursor:pointer;">Ни одного</button>
-        </div>
+  document.getElementById("aa-filter-container").innerHTML = `
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+      <h4 style="margin:0;">Удостоверяющий центр <small style="font-weight:400; color:#64748b;">(% считается только по отмеченным)</small></h4>
+      <div style="display:flex; gap:8px;">
+        <button type="button" onclick="selectAllAA(true)" style="font-size:0.8em; padding:4px 10px; background:#3b82f6; color:white; border:none; border-radius:6px; cursor:pointer;">Все</button>
+        <button type="button" onclick="selectAllAA(false)" style="font-size:0.8em; padding:4px 10px; background:#94a3b8; color:white; border:none; border-radius:6px; cursor:pointer;">Ни одного</button>
       </div>
-      <div id="aa-filters" class="checkbox-group">
-        ${uniqueAA.map(val => `<label><input type="checkbox" value="${val.replace(/"/g, "&quot;")}" checked> ${val}</label>`).join("")}
-      </div>`;
+    </div>
+    <div id="aa-filters" class="checkbox-group">
+      ${uniqueAA.map(val => `<label><input type="checkbox" value="${val.replace(/"/g, "&quot;")}" checked> ${val}</label>`).join("")}
+    </div>`;
+
+  // Удаленная схема
+  populateRemoteSchemeFilter();
+}
+
+function populateRemoteSchemeFilter() {
+  const remoteCol = COL.REMOTE;
+  const container = document.getElementById("remote-filter-container");
+
+  if (remoteCol === undefined) {
+    container.innerHTML = `<p style="color:#ef4444; font-size:0.9em;">Колонка «Удаленная схема» не найдена</p>`;
+    return;
   }
+
+  const values = new Set();
+  for (let i = 1; i < allData.length; i++) {
+    const row = allData[i];
+    if (row.length > remoteCol) {
+      const v = String(row[remoteCol] || "").trim();
+      if (v) values.add(v);
+    }
+  }
+
+  const uniqueRemote = Array.from(values).sort();
+
+  container.innerHTML = `
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+      <h4 style="margin:0;">Удаленная схема <small style="font-weight:400; color:#64748b;">(фильтр применяется к сравнению)</small></h4>
+      <div style="display:flex; gap:8px;">
+        <button type="button" onclick="selectAllRemote(true)" style="font-size:0.8em; padding:4px 10px; background:#3b82f6; color:white; border:none; border-radius:6px; cursor:pointer;">Все</button>
+        <button type="button" onclick="selectAllRemote(false)" style="font-size:0.8em; padding:4px 10px; background:#94a3b8; color:white; border:none; border-radius:6px; cursor:pointer;">Ни одного</button>
+      </div>
+    </div>
+    <div id="remote-filters" class="checkbox-group">
+      ${uniqueRemote.map(val => 
+        `<label><input type="checkbox" value="${val.replace(/"/g, "&quot;")}" checked> ${val}</label>`
+      ).join("")}
+    </div>`;
+}
+
+// ====================== КНОПКИ "ВСЕ / НИ ОДНОГО" ======================
+function selectAllQ(checked) {
+  document.querySelectorAll("#q-filters input[type='checkbox']").forEach(cb => cb.checked = checked);
+}
+
+function selectAllU(checked) {
+  document.querySelectorAll("#u-main input[type='checkbox'], #u-kcr input[type='checkbox']").forEach(cb => cb.checked = checked);
+}
+
+function selectAllAA(checked) {
+  document.querySelectorAll("#aa-filters input[type='checkbox']").forEach(cb => cb.checked = checked);
+}
+
+function selectAllRemote(checked) {
+  document.querySelectorAll("#remote-filters input[type='checkbox']").forEach(cb => cb.checked = checked);
+}
+
+// ====================== KCR ======================
+function toggleKCR() {
+  kcrEnabled = !kcrEnabled;
+  const btn = document.getElementById("kcr-button");
+  btn.textContent = kcrEnabled ? "Убрать КЦР" : "Вернуть КЦР";
+  btn.style.background = kcrEnabled ? "#ef4444" : "#22c55e";
+
+  document.querySelectorAll("#q-filters input[type='checkbox']").forEach(cb => {
+    if (cb.value.toUpperCase().includes("КЦР") || cb.value.toUpperCase().includes("KCR")) 
+      cb.checked = kcrEnabled;
+  });
+  document.querySelectorAll("#u-kcr input[type='checkbox']").forEach(cb => cb.checked = kcrEnabled);
+}
+
+function filterKCROnly() {
+  document.querySelectorAll("#q-filters input[type='checkbox']").forEach(cb => {
+    cb.checked = cb.value.toUpperCase().includes("КЦР") || cb.value.toUpperCase().includes("KCR");
+  });
+  document.querySelectorAll("#u-main input[type='checkbox']").forEach(cb => cb.checked = false);
+  document.querySelectorAll("#u-kcr input[type='checkbox']").forEach(cb => cb.checked = true);
+  kcrEnabled = true;
+  const btn = document.getElementById("kcr-button");
+  btn.textContent = "Убрать КЦР";
+  btn.style.background = "#ef4444";
+}
+
+// ====================== ПЕРИОД ВОЗВРАТА ======================
+function handleGracePeriodChange() {
+  const sel = document.getElementById("grace-period");
+  const wrap = document.getElementById("grace-custom-wrap");
+  wrap.style.display = sel.value === "custom" ? "flex" : "none";
+}
+
+function getGracePeriodDays() {
+  const sel = document.getElementById("grace-period");
+  if (sel.value === "custom") {
+    const custom = document.getElementById("grace-custom").value.trim();
+    const val = parseInt(custom);
+    if (!isNaN(val) && val >= 0) return val;
+    return 90;
+  }
+  return parseInt(sel.value) || 90;
 }
 
 // ====================== СТАТИСТИКА ПО УЦ ======================
@@ -248,37 +351,8 @@ function filterAAStats() {
     : `<tr><td colspan="3" style="text-align:center;color:#64748b;">Нет данных</td></tr>`;
 }
 
-function selectAllAA(checked) {
-  document.querySelectorAll("#aa-filters input[type='checkbox']").forEach(cb => cb.checked = checked);
-}
-
-function toggleKCR() {
-  kcrEnabled = !kcrEnabled;
-  const btn = document.getElementById("kcr-button");
-  btn.textContent = kcrEnabled ? "Убрать КЦР" : "Вернуть КЦР";
-  btn.style.background = kcrEnabled ? "#ef4444" : "#22c55e";
-
-  document.querySelectorAll("#q-filters input[type='checkbox']").forEach(cb => {
-    if (cb.value.toUpperCase().includes("КЦР") || cb.value.toUpperCase().includes("KCR")) 
-      cb.checked = kcrEnabled;
-  });
-  document.querySelectorAll("#u-kcr input[type='checkbox']").forEach(cb => cb.checked = kcrEnabled);
-}
-
-function filterKCROnly() {
-  document.querySelectorAll("#q-filters input[type='checkbox']").forEach(cb => {
-    cb.checked = cb.value.toUpperCase().includes("КЦР") || cb.value.toUpperCase().includes("KCR");
-  });
-  document.querySelectorAll("#u-main input[type='checkbox']").forEach(cb => cb.checked = false);
-  document.querySelectorAll("#u-kcr input[type='checkbox']").forEach(cb => cb.checked = true);
-  kcrEnabled = true;
-  const btn = document.getElementById("kcr-button");
-  btn.textContent = "Убрать КЦР";
-  btn.style.background = "#ef4444";
-}
-
-// ====================== ВЫЧИСЛЕНИЕ ПРОДЛЕНИЯ (улучшенная логика) ======================
-function calcRenewal(rows, p1s, p1e, p2s, p2e, includedQ, includedU, gracePeriodDays) {
+// ====================== ВЫЧИСЛЕНИЕ ПРОДЛЕНИЯ ======================
+function calcRenewal(rows, p1s, p1e, p2s, p2e, includedQ, includedU, gracePeriodDays, includedRemote) {
   if (COL.END === undefined) return null;
   const GRACE_MS = gracePeriodDays * 24 * 60 * 60 * 1000;
 
@@ -292,6 +366,10 @@ function calcRenewal(rows, p1s, p1e, p2s, p2e, includedQ, includedU, gracePeriod
     if (qval && !includedQ.has(qval)) continue;
     const uval = String(row[COL.U] || "").trim();
     if (uval && !includedU.has(uval)) continue;
+    if (includedRemote && includedRemote.size > 0 && COL.REMOTE !== undefined) {
+      const remoteVal = String(row[COL.REMOTE] || "").trim();
+      if (remoteVal && !includedRemote.has(remoteVal)) continue;
+    }
 
     const inn = String(row[COL.F] || "").trim().toUpperCase();
     if (!inn) continue;
@@ -309,7 +387,6 @@ function calcRenewal(rows, p1s, p1e, p2s, p2e, includedQ, includedU, gracePeriod
     }
   }
 
-  // Ищем следующий сертификат после П1 (по всей базе, без фильтров Q/U)
   const innNextStart = {};
   const innNextRowIndex = {};
 
@@ -352,7 +429,6 @@ function calcRenewal(rows, p1s, p1e, p2s, p2e, includedQ, includedU, gracePeriod
     }
   }
 
-  // Индексы строк для экспорта
   const renewedRowIndexes = new Set();
   const retainedRowIndexes = new Set();
   const lapsedRowIndexes = new Set();
@@ -381,8 +457,7 @@ function calcRenewal(rows, p1s, p1e, p2s, p2e, includedQ, includedU, gracePeriod
   return {
     renewalCount, retainedCount, lapsedCount, denominator,
     renewalPct, retainedPct, lapsedPct,
-    renewedRowIndexes, retainedRowIndexes, lapsedRowIndexes,
-    renewedINN, retainedINN, lapsedINN
+    renewedRowIndexes, retainedRowIndexes, lapsedRowIndexes
   };
 }
 
@@ -430,20 +505,38 @@ async function analyzeFiles() {
     return alert("Укажите корректные даты для обоих периодов!");
   }
 
-  const gracePeriodDays = parseInt(document.getElementById("grace-period").value) || 90;
+  const gracePeriodDays = getGracePeriodDays();
 
   const includedQ = new Set();
   document.querySelectorAll("#q-filters input:checked").forEach(cb => includedQ.add(cb.value));
+
   const includedU = new Set();
   document.querySelectorAll("#u-main input:checked, #u-kcr input:checked").forEach(cb => includedU.add(cb.value));
 
-  // === Расчёт удержания по СНИЛС ===
+  const includedRemote = new Set();
+  document.querySelectorAll("#remote-filters input:checked").forEach(cb => includedRemote.add(cb.value));
+
+  // Определяем все возможные значения удалённой схемы для разбивки
+  const allRemoteValues = new Set();
+  if (COL.REMOTE !== undefined) {
+    for (let i = 1; i < allData.length; i++) {
+      const v = String(allData[i][COL.REMOTE] || "").trim();
+      if (v) allRemoteValues.add(v);
+    }
+  }
+  const showRemoteBreakdown = includedRemote.size >= 2 && allRemoteValues.size >= 2;
+
+  // Расчёт по СНИЛС
   let setJ1 = new Set(), setJ2 = new Set();
   for (let i = 1; i < allData.length; i++) {
     const row = allData[i];
     const qval = COL.Q !== undefined ? String(row[COL.Q] || "").trim() : "";
     const uval = COL.U !== undefined ? String(row[COL.U] || "").trim() : "";
-    if ((qval && !includedQ.has(qval)) || (uval && !includedU.has(uval))) continue;
+    const remoteVal = COL.REMOTE !== undefined ? String(row[COL.REMOTE] || "").trim() : "";
+
+    if ((qval && !includedQ.has(qval)) || 
+        (uval && !includedU.has(uval)) ||
+        (includedRemote.size > 0 && remoteVal && !includedRemote.has(remoteVal))) continue;
 
     const date = parseDate(row[COL.V]);
     if (!date) continue;
@@ -458,18 +551,49 @@ async function analyzeFiles() {
   const matchJ = [...setJ1].filter(snils => setJ2.has(snils)).length;
   const convJ = setJ1.size ? (matchJ / setJ1.size * 100).toFixed(2) : "0";
 
-  // === Расчёт продления ===
-  const renewal = calcRenewal(allData, p1s, p1e, p2s, p2e, includedQ, includedU, gracePeriodDays);
+  // Расчёт по ИНН (основной — с применением фильтра удалённой схемы)
+  const renewal = calcRenewal(allData, p1s, p1e, p2s, p2e, includedQ, includedU, gracePeriodDays, includedRemote);
   lastExportData = { renewal, header: allData[0] };
 
-  const graceLabel = gracePeriodDays === 90 ? "квартал (90 дней)" : "год (365 дней)";
+  // Разбивка по значениям удалённой схемы (если выбрано несколько)
+  let remoteBreakdownHTML = "";
+  if (showRemoteBreakdown) {
+    const breakdownItems = [];
+    for (const remVal of Array.from(includedRemote).sort()) {
+      const singleSet = new Set([remVal]);
+      const r = calcRenewal(allData, p1s, p1e, p2s, p2e, includedQ, includedU, gracePeriodDays, singleSet);
+      if (r) breakdownItems.push({ label: remVal, r });
+    }
+    if (breakdownItems.length > 0) {
+      remoteBreakdownHTML = `
+        <div style="margin-top:40px; border-top:2px solid #e2e8f0; padding-top:30px;">
+          <h3 style="text-align:center; margin-bottom:20px;">📊 Разбивка по «Удаленная схема»</h3>
+          <div style="display:flex; flex-wrap:wrap; justify-content:center; gap:30px;">
+            ${breakdownItems.map(({ label, r }) => `
+              <div style="min-width:360px;">
+                <h4 style="text-align:center; margin-bottom:10px; color:#0f766e; background:#f0fdfa; padding:8px 16px; border-radius:10px;">
+                  Удаленная схема: <strong>${label}</strong>
+                </h4>
+                <table class="result-table">
+                  <tr><th>Метрика</th><th style="text-align:right">Кол-во</th><th style="text-align:right">%</th></tr>
+                  <tr><td>Уникальных ИНН в П1</td><td style="text-align:right">${r.denominator.toLocaleString('ru-RU')}</td><td>—</td></tr>
+                  <tr style="background:#faf5ff;color:#6d28d9"><td>🔄 Продлились</td><td style="text-align:right">${r.renewalCount}</td><td>${r.renewalPct}%</td></tr>
+                  <tr style="background:#f0fdf4;color:#166534"><td>✅ Удержались</td><td style="text-align:right">${r.retainedCount}</td><td>${r.retainedPct}%</td></tr>
+                  <tr style="background:#fff1f2;color:#b91c1c"><td>❌ Отвалились</td><td style="text-align:right">${r.lapsedCount}</td><td>${r.lapsedPct}%</td></tr>
+                </table>
+              </div>`).join("")}
+          </div>
+        </div>`;
+    }
+  }
+
+  const graceLabel = gracePeriodDays === 90 ? "квартал (90 дней)" :
+                     gracePeriodDays === 365 ? "год (365 дней)" : 
+                     `${gracePeriodDays} дней`;
 
   const renewalBlock = renewal ? `
     <div style="min-width:460px;">
       <h3 style="text-align:center; color:#7c3aed;">По ИНН — Продление / Удержание / Отвал</h3>
-      <p style="text-align:center; font-size:0.88em; color:#64748b; margin-bottom:14px;">
-        Грейс-период: <strong>${graceLabel}</strong>
-      </p>
       <table class="result-table">
         <tr><th>Метрика</th><th style="text-align:right">Кол-во</th><th style="text-align:right">%</th></tr>
         <tr><td>Уникальных ИНН в П1</td><td style="text-align:right">${renewal.denominator.toLocaleString('ru-RU')}</td><td>—</td></tr>
@@ -509,11 +633,8 @@ async function analyzeFiles() {
         </div>
         ${renewalBlock}
       </div>
+      ${remoteBreakdownHTML}
       ${exportButtons}
-      <div style="margin-top:40px;">
-        <h3 style="margin-bottom:20px;">📊 Удостоверяющие центры по периодам</h3>
-        <!-- Здесь можно добавить renderAATable если нужно, но пока оставил минимально -->
-      </div>
     </div>`;
 
   resultDiv.style.display = "block";
