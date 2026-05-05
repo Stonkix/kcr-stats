@@ -373,17 +373,15 @@ function calcRenewal(rows, p1s, p1e, p2s, p2e, includedQ, includedU, gracePeriod
 
     const inn = String(row[COL.F] || "").trim().toUpperCase();
     if (!inn) continue;
-    const date = parseDate(row[COL.V]);
-    if (!date || date < p1s || date > p1e) continue;
+    // П1 формируется по дате ОКОНЧАНИЯ сертификата
+    const endDate = parseDate(row[COL.END]);
+    if (!endDate || endDate < p1s || endDate > p1e) continue;
 
     setINN_P1.add(inn);
     rowsP1.push({ inn, rowIndex: i });
 
-    const endDate = parseDate(row[COL.END]);
-    if (endDate) {
-      if (!innP1LastEnd[inn] || endDate > innP1LastEnd[inn]) {
-        innP1LastEnd[inn] = endDate;
-      }
+    if (!innP1LastEnd[inn] || endDate > innP1LastEnd[inn]) {
+      innP1LastEnd[inn] = endDate;
     }
   }
 
@@ -538,14 +536,17 @@ async function analyzeFiles() {
         (uval && !includedU.has(uval)) ||
         (includedRemote.size > 0 && remoteVal && !includedRemote.has(remoteVal))) continue;
 
-    const date = parseDate(row[COL.V]);
-    if (!date) continue;
-
     const jval = COL.J !== undefined ? String(row[COL.J] || "").trim().toUpperCase() : "";
     if (!jval) continue;
 
-    if (date >= p1s && date <= p1e) setJ1.add(jval);
-    else if (date >= p2s && date <= p2e) setJ2.add(jval);
+    // П1 — по дате ОКОНЧАНИЯ сертификата
+    if (COL.END !== undefined) {
+      const endDate = parseDate(row[COL.END]);
+      if (endDate && endDate >= p1s && endDate <= p1e) setJ1.add(jval);
+    }
+    // П2 — по дате начала (как было)
+    const startDate = parseDate(row[COL.V]);
+    if (startDate && startDate >= p2s && startDate <= p2e) setJ2.add(jval);
   }
 
   const matchJ = [...setJ1].filter(snils => setJ2.has(snils)).length;
@@ -576,7 +577,7 @@ async function analyzeFiles() {
                 </h4>
                 <table class="result-table">
                   <tr><th>Метрика</th><th style="text-align:right">Кол-во</th><th style="text-align:right">%</th></tr>
-                  <tr><td>Уникальных ИНН в П1</td><td style="text-align:right">${r.denominator.toLocaleString('ru-RU')}</td><td>—</td></tr>
+                  <tr><td>Уникальных ИНН в П1 (по оконч.)</td><td style="text-align:right">${r.denominator.toLocaleString('ru-RU')}</td><td>—</td></tr>
                   <tr style="background:#faf5ff;color:#6d28d9"><td>🔄 Продлились</td><td style="text-align:right">${r.renewalCount}</td><td>${r.renewalPct}%</td></tr>
                   <tr style="background:#f0fdf4;color:#166534"><td>✅ Удержались</td><td style="text-align:right">${r.retainedCount}</td><td>${r.retainedPct}%</td></tr>
                   <tr style="background:#fff1f2;color:#b91c1c"><td>❌ Отвалились</td><td style="text-align:right">${r.lapsedCount}</td><td>${r.lapsedPct}%</td></tr>
@@ -596,7 +597,7 @@ async function analyzeFiles() {
       <h3 style="text-align:center; color:#7c3aed;">По ИНН — Продление / Удержание / Отвал</h3>
       <table class="result-table">
         <tr><th>Метрика</th><th style="text-align:right">Кол-во</th><th style="text-align:right">%</th></tr>
-        <tr><td>Уникальных ИНН в П1</td><td style="text-align:right">${renewal.denominator.toLocaleString('ru-RU')}</td><td>—</td></tr>
+        <tr><td>Уникальных ИНН в П1 (по оконч.)</td><td style="text-align:right">${renewal.denominator.toLocaleString('ru-RU')}</td><td>—</td></tr>
         <tr style="background:#faf5ff;color:#6d28d9"><td>🔄 Продлились</td><td style="text-align:right">${renewal.renewalCount}</td><td>${renewal.renewalPct}%</td></tr>
         <tr style="background:#f0fdf4;color:#166534"><td>✅ Удержались</td><td style="text-align:right">${renewal.retainedCount}</td><td>${renewal.retainedPct}%</td></tr>
         <tr style="background:#fff1f2;color:#b91c1c"><td>❌ Отвалились</td><td style="text-align:right">${renewal.lapsedCount}</td><td>${renewal.lapsedPct}%</td></tr>
@@ -626,7 +627,7 @@ async function analyzeFiles() {
           <h3 style="text-align:center; color:#1e40af;">По СНИЛС — Удержание</h3>
           <table class="result-table">
             <tr><th>Метрика</th><th style="text-align:right">Значение</th></tr>
-            <tr><td>Уникальных СНИЛС в П1</td><td>${setJ1.size.toLocaleString('ru-RU')}</td></tr>
+            <tr><td>Уникальных СНИЛС в П1 (по оконч.)</td><td>${setJ1.size.toLocaleString('ru-RU')}</td></tr>
             <tr><td>Совпадений в П2</td><td>${matchJ.toLocaleString('ru-RU')}</td></tr>
             <tr style="background:#f0fdf4;color:#166534"><td><strong>% Удержания</strong></td><td><strong>${convJ}%</strong></td></tr>
           </table>
