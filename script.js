@@ -355,13 +355,18 @@ function filterAAStats() {
 function calcRenewal(rows, p1s, p1e, p2s, p2e, includedQ, includedU, gracePeriodDays, includedRemote) {
   if (COL.END === undefined) return null;
   const GRACE_MS = gracePeriodDays * 24 * 60 * 60 * 1000;
+  const fmt = d => d ? d.toLocaleDateString('ru-RU') : '—';
 
-  const setINN_P1 = new Set();
-  const innP1LastEnd = {};
-  const rowsP1 = [];
+  // --- ШАГ 1: собираем ИНН из П1 (по дате ОКОНЧАНИЯ серта) ---
+  const setINN_K1 = new Set();
+  const innK1LastEnd = {};   // последняя дата окончания в П1 для каждого ИНН
+  const rowsK1 = [];         // для экспорта «отвалились»
+  let rowsScanned = 0, rowsPassedFilters = 0, rowsNoINN = 0, rowsNoEnd = 0, rowsOutOfK1 = 0;
 
   for (let i = 1; i < rows.length; i++) {
     const row = rows[i];
+    rowsScanned++;
+
     const qval = String(row[COL.Q] || "").trim();
     if (qval && !includedQ.has(qval)) continue;
     const uval = String(row[COL.U] || "").trim();
@@ -370,92 +375,135 @@ function calcRenewal(rows, p1s, p1e, p2s, p2e, includedQ, includedU, gracePeriod
       const remoteVal = String(row[COL.REMOTE] || "").trim();
       if (remoteVal && !includedRemote.has(remoteVal)) continue;
     }
+    rowsPassedFilters++;
 
     const inn = String(row[COL.F] || "").trim().toUpperCase();
-    if (!inn) continue;
-    // П1 формируется по дате ОКОНЧАНИЯ сертификата
+    if (!inn) { rowsNoINN++; continue; }
+
     const endDate = parseDate(row[COL.END]);
-    if (!endDate || endDate < p1s || endDate > p1e) continue;
+    if (!endDate) { rowsNoEnd++; continue; }
 
-    setINN_P1.add(inn);
-    rowsP1.push({ inn, rowIndex: i });
+    if (endDate < p1s || endDate > p1e) { rowsOutOfK1++; continue; }
 
-    if (!innP1LastEnd[inn] || endDate > innP1LastEnd[inn]) {
-      innP1LastEnd[inn] = endDate;
-    }
+    setINN_K1.add(inn);
+    rowsK1.push({ inn, rowIndex: i });
+    if (!innK1LastEnd[inn] || endDate > innK1LastEnd[inn]) innK1LastEnd[inn] = endDate;
   }
 
-  const innNextStart = {};
-  const innNextRowIndex = {};
+  // --- ШАГ 2: ищем новый сертификат в П2 (по дате НАЧАЛА, строго внутри p2s..p2e) ---
+  // Важно: К1 и К2 — одинаковый временной отрезок, поэтому p2s=p1s, p2e=p1e
+  // Ищем среди ВСЕХ строк (без фильтра дат К1) — нужен старт внутри К2
+  const innK2Start = {};     // ближайшая дата начала нового серта в П2
+  const innK2RowIndex = {};
+  let rowsFoundInK2 = 0;
 
   for (let i = 1; i < rows.length; i++) {
     const row = rows[i];
     const inn = String(row[COL.F] || "").trim().toUpperCase();
-    if (!inn || !setINN_P1.has(inn)) continue;
-    const date = parseDate(row[COL.V]);
-    if (!date || date <= p1e) continue;
+    if (!inn || !setINN_K1.has(inn)) continue;
 
-    if (!innNextStart[inn] || date < innNextStart[inn]) {
-      innNextStart[inn] = date;
-      innNextRowIndex[inn] = i;
+    const startDate = parseDate(row[COL.V]);
+    if (!startDate) continue;
+    // Новый сертификат должен начаться внутри К2
+    if (startDate < p2s || startDate > p2e) continue;
+
+    // Берём самый ранний старт в П2
+    if (!innK2Start[inn] || startDate < innK2Start[inn]) {
+      innK2Start[inn] = startDate;
+      innK2RowIndex[inn] = i;
+      rowsFoundInK2++;
     }
   }
 
+  // --- ШАГ 3: классификация ---
   const renewedINN = new Set();
   const retainedINN = new Set();
   const lapsedINN = new Set();
+  // Собираем по 10 примеров для каждой категории отдельно
+  const debugRenewed = [];
+  const debugRetained = [];
+  const debugLapsed = [];
 
-  for (const inn of setINN_P1) {
-    const prevEnd = innP1LastEnd[inn];
-    const nextStart = innNextStart[inn];
+  for (const inn of setINN_K1) {
+    const prevEnd  = innK1LastEnd[inn];
+    const nextStart = innK2Start[inn];
+
+    let category, reason;
 
     if (!nextStart) {
       lapsedINN.add(inn);
-      continue;
-    }
-    if (!prevEnd) {
+      category = "lapsed";
+      reason = `нет нового серта в П2 (${fmt(p2s)}–${fmt(p2e)})`;
+    } else if (!prevEnd) {
       retainedINN.add(inn);
-      continue;
-    }
-
-    if (nextStart <= prevEnd) {
+      category = "retained";
+      reason = `нет даты окончания в П1 (нестандартно)`;
+    } else if (nextStart <= prevEnd) {
       renewedINN.add(inn);
+      category = "renewed";
+      reason = `новый старт ${fmt(nextStart)} ≤ конец старого ${fmt(prevEnd)} (купил заранее)`;
     } else if (nextStart.getTime() <= prevEnd.getTime() + GRACE_MS) {
       retainedINN.add(inn);
+      category = "retained";
+      reason = `новый старт ${fmt(nextStart)}, конец старого ${fmt(prevEnd)}, разрыв ${Math.round((nextStart-prevEnd)/86400000)} дн ≤ ${gracePeriodDays} дн`;
     } else {
       lapsedINN.add(inn);
+      category = "lapsed";
+      reason = `новый старт ${fmt(nextStart)}, конец старого ${fmt(prevEnd)}, разрыв ${Math.round((nextStart-prevEnd)/86400000)} дн > ${gracePeriodDays} дн`;
     }
+
+    const entry = { inn, reason, prevEnd, nextStart };
+    if (category === "renewed"  && debugRenewed.length  < 10) debugRenewed.push(entry);
+    if (category === "retained" && debugRetained.length < 10) debugRetained.push(entry);
+    if (category === "lapsed"   && debugLapsed.length   < 10) debugLapsed.push(entry);
   }
 
+  // --- ШАГ 4: индексы строк для экспорта ---
   const renewedRowIndexes = new Set();
   const retainedRowIndexes = new Set();
   const lapsedRowIndexes = new Set();
 
-  for (const inn of renewedINN) if (innNextRowIndex[inn] !== undefined) renewedRowIndexes.add(innNextRowIndex[inn]);
-  for (const inn of retainedINN) if (innNextRowIndex[inn] !== undefined) retainedRowIndexes.add(innNextRowIndex[inn]);
+  for (const inn of renewedINN)  if (innK2RowIndex[inn]  !== undefined) renewedRowIndexes.add(innK2RowIndex[inn]);
+  for (const inn of retainedINN) if (innK2RowIndex[inn]  !== undefined) retainedRowIndexes.add(innK2RowIndex[inn]);
 
   const seenLapsed = new Set();
-  for (let k = rowsP1.length - 1; k >= 0; k--) {
-    const { inn, rowIndex } = rowsP1[k];
+  for (let k = rowsK1.length - 1; k >= 0; k--) {
+    const { inn, rowIndex } = rowsK1[k];
     if (lapsedINN.has(inn) && !seenLapsed.has(inn)) {
       lapsedRowIndexes.add(rowIndex);
       seenLapsed.add(inn);
     }
   }
 
-  const denominator = setINN_P1.size;
-  const renewalCount = renewedINN.size;
+  const denominator   = setINN_K1.size;
+  const renewalCount  = renewedINN.size;
   const retainedCount = retainedINN.size;
-  const lapsedCount = lapsedINN.size;
+  const lapsedCount   = lapsedINN.size;
 
-  const renewalPct = denominator > 0 ? (renewalCount / denominator * 100).toFixed(2) : "0";
+  const renewalPct  = denominator > 0 ? (renewalCount  / denominator * 100).toFixed(2) : "0";
   const retainedPct = denominator > 0 ? (retainedCount / denominator * 100).toFixed(2) : "0";
-  const lapsedPct = denominator > 0 ? (lapsedCount / denominator * 100).toFixed(2) : "0";
+  const lapsedPct   = denominator > 0 ? (lapsedCount   / denominator * 100).toFixed(2) : "0";
+
+  // --- Диагностический лог ---
+  const debugLog = {
+    rowsScanned,
+    rowsPassedFilters,
+    rowsNoINN,
+    rowsNoEnd,
+    rowsOutOfK1,
+    totalInK1: setINN_K1.size,
+    rowsFoundInK2,
+    uniqueInnWithK2: Object.keys(innK2Start).length,
+    debugRenewed,
+    debugRetained,
+    debugLapsed
+  };
 
   return {
     renewalCount, retainedCount, lapsedCount, denominator,
     renewalPct, retainedPct, lapsedPct,
-    renewedRowIndexes, retainedRowIndexes, lapsedRowIndexes
+    renewedRowIndexes, retainedRowIndexes, lapsedRowIndexes,
+    debugLog
   };
 }
 
@@ -500,7 +548,7 @@ async function analyzeFiles() {
   p2e.setHours(23, 59, 59, 999);
 
   if (isNaN(p1s) || isNaN(p1e) || isNaN(p2s) || isNaN(p2e)) {
-    return alert("Укажите корректные даты для обоих периодов!");
+    return alert("Укажите корректные даты для обоих кварталов!");
   }
 
   const gracePeriodDays = getGracePeriodDays();
@@ -514,7 +562,6 @@ async function analyzeFiles() {
   const includedRemote = new Set();
   document.querySelectorAll("#remote-filters input:checked").forEach(cb => includedRemote.add(cb.value));
 
-  // Определяем все возможные значения удалённой схемы для разбивки
   const allRemoteValues = new Set();
   if (COL.REMOTE !== undefined) {
     for (let i = 1; i < allData.length; i++) {
@@ -524,7 +571,9 @@ async function analyzeFiles() {
   }
   const showRemoteBreakdown = includedRemote.size >= 2 && allRemoteValues.size >= 2;
 
-  // Расчёт по СНИЛС
+  // --- Расчёт по СНИЛС ---
+  // К1: серты, чья дата ОКОНЧАНИЯ попадает в диапазон К1
+  // К2: серты, чья дата НАЧАЛА попадает в диапазон К2
   let setJ1 = new Set(), setJ2 = new Set();
   for (let i = 1; i < allData.length; i++) {
     const row = allData[i];
@@ -532,19 +581,17 @@ async function analyzeFiles() {
     const uval = COL.U !== undefined ? String(row[COL.U] || "").trim() : "";
     const remoteVal = COL.REMOTE !== undefined ? String(row[COL.REMOTE] || "").trim() : "";
 
-    if ((qval && !includedQ.has(qval)) || 
+    if ((qval && !includedQ.has(qval)) ||
         (uval && !includedU.has(uval)) ||
         (includedRemote.size > 0 && remoteVal && !includedRemote.has(remoteVal))) continue;
 
     const jval = COL.J !== undefined ? String(row[COL.J] || "").trim().toUpperCase() : "";
     if (!jval) continue;
 
-    // П1 — по дате ОКОНЧАНИЯ сертификата
     if (COL.END !== undefined) {
       const endDate = parseDate(row[COL.END]);
       if (endDate && endDate >= p1s && endDate <= p1e) setJ1.add(jval);
     }
-    // П2 — по дате начала (как было)
     const startDate = parseDate(row[COL.V]);
     if (startDate && startDate >= p2s && startDate <= p2e) setJ2.add(jval);
   }
@@ -552,11 +599,11 @@ async function analyzeFiles() {
   const matchJ = [...setJ1].filter(snils => setJ2.has(snils)).length;
   const convJ = setJ1.size ? (matchJ / setJ1.size * 100).toFixed(2) : "0";
 
-  // Расчёт по ИНН (основной — с применением фильтра удалённой схемы)
+  // --- Расчёт по ИНН ---
   const renewal = calcRenewal(allData, p1s, p1e, p2s, p2e, includedQ, includedU, gracePeriodDays, includedRemote);
   lastExportData = { renewal, header: allData[0] };
 
-  // Разбивка по значениям удалённой схемы (если выбрано несколько)
+  // --- Разбивка по удалённой схеме ---
   let remoteBreakdownHTML = "";
   if (showRemoteBreakdown) {
     const breakdownItems = [];
@@ -577,7 +624,7 @@ async function analyzeFiles() {
                 </h4>
                 <table class="result-table">
                   <tr><th>Метрика</th><th style="text-align:right">Кол-во</th><th style="text-align:right">%</th></tr>
-                  <tr><td>Уникальных ИНН в П1 (по оконч.)</td><td style="text-align:right">${r.denominator.toLocaleString('ru-RU')}</td><td>—</td></tr>
+                  <tr><td>ИНН с окончанием в П1</td><td style="text-align:right">${r.denominator.toLocaleString('ru-RU')}</td><td>—</td></tr>
                   <tr style="background:#faf5ff;color:#6d28d9"><td>🔄 Продлились</td><td style="text-align:right">${r.renewalCount}</td><td>${r.renewalPct}%</td></tr>
                   <tr style="background:#f0fdf4;color:#166534"><td>✅ Удержались</td><td style="text-align:right">${r.retainedCount}</td><td>${r.retainedPct}%</td></tr>
                   <tr style="background:#fff1f2;color:#b91c1c"><td>❌ Отвалились</td><td style="text-align:right">${r.lapsedCount}</td><td>${r.lapsedPct}%</td></tr>
@@ -588,16 +635,12 @@ async function analyzeFiles() {
     }
   }
 
-  const graceLabel = gracePeriodDays === 90 ? "квартал (90 дней)" :
-                     gracePeriodDays === 365 ? "год (365 дней)" : 
-                     `${gracePeriodDays} дней`;
-
   const renewalBlock = renewal ? `
     <div style="min-width:460px;">
       <h3 style="text-align:center; color:#7c3aed;">По ИНН — Продление / Удержание / Отвал</h3>
       <table class="result-table">
         <tr><th>Метрика</th><th style="text-align:right">Кол-во</th><th style="text-align:right">%</th></tr>
-        <tr><td>Уникальных ИНН в П1 (по оконч.)</td><td style="text-align:right">${renewal.denominator.toLocaleString('ru-RU')}</td><td>—</td></tr>
+        <tr><td>ИНН с окончанием серта в П1</td><td style="text-align:right">${renewal.denominator.toLocaleString('ru-RU')}</td><td>—</td></tr>
         <tr style="background:#faf5ff;color:#6d28d9"><td>🔄 Продлились</td><td style="text-align:right">${renewal.renewalCount}</td><td>${renewal.renewalPct}%</td></tr>
         <tr style="background:#f0fdf4;color:#166534"><td>✅ Удержались</td><td style="text-align:right">${renewal.retainedCount}</td><td>${renewal.retainedPct}%</td></tr>
         <tr style="background:#fff1f2;color:#b91c1c"><td>❌ Отвалились</td><td style="text-align:right">${renewal.lapsedCount}</td><td>${renewal.lapsedPct}%</td></tr>
@@ -614,21 +657,81 @@ async function analyzeFiles() {
       </div>
     </div>` : "";
 
+  // --- Блок диагностического лога ---
+  let debugHTML = "";
+  if (renewal && renewal.debugLog) {
+    const dl = renewal.debugLog;
+
+    const makeTable = (rows) => {
+      if (!rows.length) return `<p style="color:#94a3b8; font-style:italic;">Нет записей</p>`;
+      return `<table class="result-table" style="font-size:0.85em;">
+        <tr><th>ИНН</th><th>Оконч. в П1</th><th>Новый старт в П2</th><th>Причина</th></tr>
+        ${rows.map(r => `
+          <tr>
+            <td style="font-family:monospace">${r.inn}</td>
+            <td>${r.prevEnd ? r.prevEnd.toLocaleDateString('ru-RU') : '—'}</td>
+            <td>${r.nextStart ? r.nextStart.toLocaleDateString('ru-RU') : '—'}</td>
+            <td style="color:#64748b; font-size:0.9em;">${r.reason}</td>
+          </tr>`).join("")}
+      </table>`;
+    };
+
+    debugHTML = `
+      <div style="margin-top:40px; border-top:2px dashed #e2e8f0; padding-top:30px;">
+        <details>
+          <summary style="cursor:pointer; font-size:1.1em; font-weight:700; color:#475569; padding:12px 16px; background:#f8fafc; border-radius:12px; border:1px solid #e2e8f0; list-style:none; display:flex; align-items:center; gap:8px;">
+            🔍 Диагностический лог (что именно нашла программа)
+          </summary>
+          <div style="margin-top:16px; display:flex; flex-direction:column; gap:20px;">
+
+            <div style="background:#f1f5f9; border-radius:12px; padding:16px 20px; font-size:0.9em; line-height:1.9;">
+              <strong>📋 Общая статистика обработки строк:</strong><br>
+              Всего строк в файле: <b>${dl.rowsScanned.toLocaleString('ru-RU')}</b><br>
+              Прошли фильтры (тариф / спецпред / удал.схема): <b>${dl.rowsPassedFilters.toLocaleString('ru-RU')}</b><br>
+              Пропущено — нет ИНН: <b>${dl.rowsNoINN}</b><br>
+              Пропущено — нет даты окончания: <b>${dl.rowsNoEnd}</b><br>
+              Пропущено — дата окончания вне П1: <b>${dl.rowsOutOfK1.toLocaleString('ru-RU')}</b><br>
+              <b>→ Уникальных ИНН попало в П1: ${dl.totalInK1.toLocaleString('ru-RU')}</b><br>
+              <hr style="border:none; border-top:1px solid #cbd5e1; margin:8px 0;">
+              Уникальных ИНН у которых найден новый серт в П2: <b>${dl.uniqueInnWithK2.toLocaleString('ru-RU')}</b><br>
+              Уникальных ИНН без нового серта в П2: <b>${(dl.totalInK1 - dl.uniqueInnWithK2).toLocaleString('ru-RU')}</b>
+            </div>
+
+            <div>
+              <h4 style="color:#6d28d9; margin:0 0 8px 0;">🔄 Продлились — до 10 примеров (найдено: ${dl.debugRenewed.length})</h4>
+              ${makeTable(dl.debugRenewed)}
+            </div>
+
+            <div>
+              <h4 style="color:#166534; margin:0 0 8px 0;">✅ Удержались — до 10 примеров (найдено: ${dl.debugRetained.length})</h4>
+              ${makeTable(dl.debugRetained)}
+            </div>
+
+            <div>
+              <h4 style="color:#b91c1c; margin:0 0 8px 0;">❌ Отвалились — до 10 примеров (найдено: ${dl.debugLapsed.length})</h4>
+              ${makeTable(dl.debugLapsed)}
+            </div>
+
+          </div>
+        </details>
+      </div>`;
+  }
+
   const resultDiv = document.getElementById("result");
   resultDiv.innerHTML = `
     <div class="center">
-      <h2>✅ Результат сравнения</h2>
-      <p style="font-size:1.25em; margin:25px 0;">
-        <strong>Период 1:</strong> ${p1s.toLocaleDateString('ru-RU')} — ${p1e.toLocaleDateString('ru-RU')}<br>
-        <strong>Период 2:</strong> ${p2s.toLocaleDateString('ru-RU')} — ${p2e.toLocaleDateString('ru-RU')}
+      <h2>✅ Результат анализа</h2>
+      <p style="font-size:1.1em; margin:20px 0; background:#f0f9ff; padding:14px 20px; border-radius:12px; display:inline-block; text-align:left; line-height:1.8;">
+        <strong>Период 1</strong>: ${p1s.toLocaleDateString('ru-RU')} — ${p1e.toLocaleDateString('ru-RU')}<br>
+        <strong>Период 2</strong>: ${p2s.toLocaleDateString('ru-RU')} — ${p2e.toLocaleDateString('ru-RU')}
       </p>
       <div style="display:flex; flex-wrap:wrap; justify-content:center; gap:40px; margin-top:30px;">
         <div style="min-width:420px;">
           <h3 style="text-align:center; color:#1e40af;">По СНИЛС — Удержание</h3>
           <table class="result-table">
             <tr><th>Метрика</th><th style="text-align:right">Значение</th></tr>
-            <tr><td>Уникальных СНИЛС в П1 (по оконч.)</td><td>${setJ1.size.toLocaleString('ru-RU')}</td></tr>
-            <tr><td>Совпадений в П2</td><td>${matchJ.toLocaleString('ru-RU')}</td></tr>
+            <tr><td>СНИЛС с окончанием серта в П1</td><td>${setJ1.size.toLocaleString('ru-RU')}</td></tr>
+            <tr><td>Из них купили серт в П2</td><td>${matchJ.toLocaleString('ru-RU')}</td></tr>
             <tr style="background:#f0fdf4;color:#166534"><td><strong>% Удержания</strong></td><td><strong>${convJ}%</strong></td></tr>
           </table>
         </div>
@@ -636,6 +739,7 @@ async function analyzeFiles() {
       </div>
       ${remoteBreakdownHTML}
       ${exportButtons}
+      ${debugHTML}
     </div>`;
 
   resultDiv.style.display = "block";
