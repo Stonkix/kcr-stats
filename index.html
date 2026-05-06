@@ -90,23 +90,16 @@
 
       <div class="periods-container">
         <div>
-          <h3>Период 1 <small style="font-size:0.7em; color:#64748b; font-weight:400;">(ИНН с окончанием серта в этом диапазоне)</small></h3>
+          <h3>Период <small style="font-size:0.7em; color:#64748b; font-weight:400;">(один диапазон используется и для окончания старого, и для начала нового сертификата)</small></h3>
           <div style="display: flex; flex-direction: column; gap: 15px;">
             <label style="font-weight: 600;">Начало <input type="date" id="p1-start" style="width: 100%; padding: 12px; border-radius: 12px; border: 2px solid #e2e8f0;"></label>
             <label style="font-weight: 600;">Конец <input type="date" id="p1-end" style="width: 100%; padding: 12px; border-radius: 12px; border: 2px solid #e2e8f0;"></label>
           </div>
         </div>
-        <div>
-          <h3>Период 2 <small style="font-size:0.7em; color:#64748b; font-weight:400;">(ИНН купившие новый серт в этом диапазоне)</small></h3>
-          <div style="display: flex; flex-direction: column; gap: 15px;">
-            <label style="font-weight: 600;">Начало <input type="date" id="p2-start" style="width: 100%; padding: 12px; border-radius: 12px; border: 2px solid #e2e8f0;"></label>
-            <label style="font-weight: 600;">Конец <input type="date" id="p2-end" style="width: 100%; padding: 12px; border-radius: 12px; border: 2px solid #e2e8f0;"></label>
-          </div>
-        </div>
       </div>
 
       <center style="margin-top: 40px;">
-        <button id="analyzeBtn" onclick="analyzeFiles()" disabled>🚀 Сравнить периоды</button>
+        <button id="analyzeBtn" onclick="analyzeFiles()" disabled>🚀 Сравнить период</button>
       </center>
     </div>
 

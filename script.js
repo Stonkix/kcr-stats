@@ -44,7 +44,70 @@ function excelToDate(serial) {
 function parseDate(val) {
   if (typeof val === "number") return excelToDate(val);
   if (val instanceof Date) return val;
+  if (typeof val === "string") {
+    const s = val.trim();
+    if (!s) return null;
+
+    // dd.mm.yyyy (or dd/mm/yyyy), optionally with time
+    const ruMatch = s.match(/^(\d{1,2})[./-](\d{1,2})[./-](\d{2,4})(?:\s+.*)?$/);
+    if (ruMatch) {
+      const day = Number(ruMatch[1]);
+      const month = Number(ruMatch[2]) - 1;
+      let year = Number(ruMatch[3]);
+      if (year < 100) year += 2000;
+      const d = new Date(year, month, day);
+      if (!isNaN(d.getTime())) return d;
+    }
+
+    // Fallback for ISO-like strings
+    const parsed = new Date(s);
+    if (!isNaN(parsed.getTime())) return parsed;
+  }
   return null;
+}
+
+function normalizeText(val) {
+  return String(val ?? "")
+    .replace(/[\u00A0\u2007\u202F]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function normalizeInn(val) {
+  const raw = normalizeText(val).replace(/\s+/g, "");
+  if (!raw) return "";
+
+  const noDecimalTail = raw.replace(/[.,]0+$/, "");
+  const digits = noDecimalTail.replace(/\D/g, "");
+
+  if (digits.length === 10 || digits.length === 12) return digits;
+  return digits || noDecimalTail.toUpperCase();
+}
+
+function rowPassesSelectedFilters(row, includedQ, includedU, includedRemote) {
+  const passesSetFilter = (value, selectedSet, allowEmpty) => {
+    if (!selectedSet) return true;
+    if (selectedSet.size === 0) return false;
+    if (!value) return !!allowEmpty;
+    return selectedSet.has(value);
+  };
+
+  if (COL.Q !== undefined && includedQ) {
+    const qval = normalizeText(row[COL.Q]);
+    if (!passesSetFilter(qval, includedQ, true)) return false;
+  }
+
+  if (COL.U !== undefined && includedU) {
+    const uval = normalizeText(row[COL.U]);
+    if (!passesSetFilter(uval, includedU, true)) return false;
+  }
+
+  if (COL.REMOTE !== undefined && includedRemote) {
+    const remoteVal = normalizeText(row[COL.REMOTE]);
+    if (!passesSetFilter(remoteVal, includedRemote, true)) return false;
+  }
+
+  return true;
 }
 
 async function readFile(file) {
@@ -86,15 +149,15 @@ async function handleUpload() {
     for (let i = 1; i < allData.length; i++) {
       const row = allData[i];
       if (COL.Q !== undefined && row.length > COL.Q) {
-        const v = String(row[COL.Q] || "").trim();
+        const v = normalizeText(row[COL.Q]);
         if (v) tempQ.add(v);
       }
       if (COL.U !== undefined && row.length > COL.U) {
-        const v = String(row[COL.U] || "").trim();
+        const v = normalizeText(row[COL.U]);
         if (v) tempU.add(v);
       }
       if (COL.AA !== undefined && row.length > COL.AA) {
-        const v = String(row[COL.AA] || "").trim();
+        const v = normalizeText(row[COL.AA]);
         if (v && v !== EXCLUDED_UC) tempAA.add(v);
       }
     }
@@ -138,7 +201,7 @@ function populateFilters() {
   // Удостоверяющие центры
   const uniqueAA = Array.from(new Set(
     allData.slice(1)
-      .map(row => COL.AA !== undefined && row.length > COL.AA ? String(row[COL.AA] || "").trim() : null)
+      .map(row => COL.AA !== undefined && row.length > COL.AA ? normalizeText(row[COL.AA]) : null)
       .filter(v => v && v !== EXCLUDED_UC)
   )).sort((a, b) => a.localeCompare(b, 'ru'));
 
@@ -171,7 +234,7 @@ function populateRemoteSchemeFilter() {
   for (let i = 1; i < allData.length; i++) {
     const row = allData[i];
     if (row.length > remoteCol) {
-      const v = String(row[remoteCol] || "").trim();
+      const v = normalizeText(row[remoteCol]);
       if (v) values.add(v);
     }
   }
@@ -352,32 +415,34 @@ function filterAAStats() {
 }
 
 // ====================== ВЫЧИСЛЕНИЕ ПРОДЛЕНИЯ ======================
-function calcRenewal(rows, p1s, p1e, p2s, p2e, includedQ, includedU, gracePeriodDays, includedRemote) {
+function calcRenewal(
+  rows,
+  p1s,
+  p1e,
+  p2s,
+  p2e,
+  includedQ,
+  includedU,
+  gracePeriodDays,
+  includedRemote
+) {
   if (COL.END === undefined) return null;
   const GRACE_MS = gracePeriodDays * 24 * 60 * 60 * 1000;
   const fmt = d => d ? d.toLocaleDateString('ru-RU') : '—';
 
-  // --- ШАГ 1: собираем ИНН из П1 (по дате ОКОНЧАНИЯ серта) ---
+  // --- ШАГ 1: собираем ИНН из выбранного периода (по дате ОКОНЧАНИЯ серта) ---
   const setINN_K1 = new Set();
-  const innK1LastEnd = {};   // последняя дата окончания в П1 для каждого ИНН
+  const innK1LastEnd = {};   // последняя дата окончания в периоде для каждого ИНН
   const rowsK1 = [];         // для экспорта «отвалились»
   let rowsScanned = 0, rowsPassedFilters = 0, rowsNoINN = 0, rowsNoEnd = 0, rowsOutOfK1 = 0;
 
   for (let i = 1; i < rows.length; i++) {
     const row = rows[i];
     rowsScanned++;
-
-    const qval = String(row[COL.Q] || "").trim();
-    if (qval && !includedQ.has(qval)) continue;
-    const uval = String(row[COL.U] || "").trim();
-    if (uval && !includedU.has(uval)) continue;
-    if (includedRemote && includedRemote.size > 0 && COL.REMOTE !== undefined) {
-      const remoteVal = String(row[COL.REMOTE] || "").trim();
-      if (remoteVal && !includedRemote.has(remoteVal)) continue;
-    }
+    if (!rowPassesSelectedFilters(row, includedQ, includedU, includedRemote)) continue;
     rowsPassedFilters++;
 
-    const inn = String(row[COL.F] || "").trim().toUpperCase();
+    const inn = normalizeInn(row[COL.F]);
     if (!inn) { rowsNoINN++; continue; }
 
     const endDate = parseDate(row[COL.END]);
@@ -390,24 +455,26 @@ function calcRenewal(rows, p1s, p1e, p2s, p2e, includedQ, includedU, gracePeriod
     if (!innK1LastEnd[inn] || endDate > innK1LastEnd[inn]) innK1LastEnd[inn] = endDate;
   }
 
-  // --- ШАГ 2: ищем новый сертификат в П2 (по дате НАЧАЛА, строго внутри p2s..p2e) ---
-  // Важно: К1 и К2 — одинаковый временной отрезок, поэтому p2s=p1s, p2e=p1e
-  // Ищем среди ВСЕХ строк (без фильтра дат К1) — нужен старт внутри К2
-  const innK2Start = {};     // ближайшая дата начала нового серта в П2
+  // --- ШАГ 2: ищем новый сертификат в выбранном периоде (по дате НАЧАЛА, строго внутри p2s..p2e) ---
+  // Важно: окончание и новый старт считаются в одном и том же выбранном периоде
+  // Ищем среди ВСЕХ строк (без фильтра по дате окончания) — нужен старт внутри периода
+  const innK2Start = {};     // ближайшая дата начала нового серта в периоде
   const innK2RowIndex = {};
   let rowsFoundInK2 = 0;
 
   for (let i = 1; i < rows.length; i++) {
     const row = rows[i];
-    const inn = String(row[COL.F] || "").trim().toUpperCase();
+    if (!rowPassesSelectedFilters(row, includedQ, includedU, includedRemote)) continue;
+
+    const inn = normalizeInn(row[COL.F]);
     if (!inn || !setINN_K1.has(inn)) continue;
 
     const startDate = parseDate(row[COL.V]);
     if (!startDate) continue;
-    // Новый сертификат должен начаться внутри К2
+    // Новый сертификат должен начаться внутри выбранного периода
     if (startDate < p2s || startDate > p2e) continue;
 
-    // Берём самый ранний старт в П2
+    // Берём самый ранний старт в периоде
     if (!innK2Start[inn] || startDate < innK2Start[inn]) {
       innK2Start[inn] = startDate;
       innK2RowIndex[inn] = i;
@@ -433,11 +500,11 @@ function calcRenewal(rows, p1s, p1e, p2s, p2e, includedQ, includedU, gracePeriod
     if (!nextStart) {
       lapsedINN.add(inn);
       category = "lapsed";
-      reason = `нет нового серта в П2 (${fmt(p2s)}–${fmt(p2e)})`;
+      reason = `нет нового серта в выбранном периоде (${fmt(p2s)}–${fmt(p2e)})`;
     } else if (!prevEnd) {
       retainedINN.add(inn);
       category = "retained";
-      reason = `нет даты окончания в П1 (нестандартно)`;
+      reason = `нет даты окончания в выбранном периоде (нестандартно)`;
     } else if (nextStart <= prevEnd) {
       renewedINN.add(inn);
       category = "renewed";
@@ -542,50 +609,44 @@ async function analyzeFiles() {
 
   const p1s = new Date(document.getElementById("p1-start").value);
   const p1e = new Date(document.getElementById("p1-end").value);
-  const p2s = new Date(document.getElementById("p2-start").value);
-  const p2e = new Date(document.getElementById("p2-end").value);
+  const p2s = new Date(p1s);
+  const p2e = new Date(p1e);
   p1e.setHours(23, 59, 59, 999);
   p2e.setHours(23, 59, 59, 999);
 
-  if (isNaN(p1s) || isNaN(p1e) || isNaN(p2s) || isNaN(p2e)) {
-    return alert("Укажите корректные даты для обоих кварталов!");
+  if (isNaN(p1s) || isNaN(p1e)) {
+    return alert("Укажите корректные даты периода!");
   }
 
   const gracePeriodDays = getGracePeriodDays();
 
   const includedQ = new Set();
-  document.querySelectorAll("#q-filters input:checked").forEach(cb => includedQ.add(cb.value));
+  document.querySelectorAll("#q-filters input:checked").forEach(cb => includedQ.add(normalizeText(cb.value)));
 
   const includedU = new Set();
-  document.querySelectorAll("#u-main input:checked, #u-kcr input:checked").forEach(cb => includedU.add(cb.value));
+  document.querySelectorAll("#u-main input:checked, #u-kcr input:checked").forEach(cb => includedU.add(normalizeText(cb.value)));
 
   const includedRemote = new Set();
-  document.querySelectorAll("#remote-filters input:checked").forEach(cb => includedRemote.add(cb.value));
+  document.querySelectorAll("#remote-filters input:checked").forEach(cb => includedRemote.add(normalizeText(cb.value)));
 
   const allRemoteValues = new Set();
   if (COL.REMOTE !== undefined) {
     for (let i = 1; i < allData.length; i++) {
-      const v = String(allData[i][COL.REMOTE] || "").trim();
+      const v = normalizeText(allData[i][COL.REMOTE]);
       if (v) allRemoteValues.add(v);
     }
   }
   const showRemoteBreakdown = includedRemote.size >= 2 && allRemoteValues.size >= 2;
 
   // --- Расчёт по СНИЛС ---
-  // К1: серты, чья дата ОКОНЧАНИЯ попадает в диапазон К1
-  // К2: серты, чья дата НАЧАЛА попадает в диапазон К2
+  // Серт с окончанием: дата ОКОНЧАНИЯ попадает в выбранный период
+  // Новый серт: дата НАЧАЛА попадает в тот же выбранный период
   let setJ1 = new Set(), setJ2 = new Set();
   for (let i = 1; i < allData.length; i++) {
     const row = allData[i];
-    const qval = COL.Q !== undefined ? String(row[COL.Q] || "").trim() : "";
-    const uval = COL.U !== undefined ? String(row[COL.U] || "").trim() : "";
-    const remoteVal = COL.REMOTE !== undefined ? String(row[COL.REMOTE] || "").trim() : "";
+    if (!rowPassesSelectedFilters(row, includedQ, includedU, includedRemote)) continue;
 
-    if ((qval && !includedQ.has(qval)) ||
-        (uval && !includedU.has(uval)) ||
-        (includedRemote.size > 0 && remoteVal && !includedRemote.has(remoteVal))) continue;
-
-    const jval = COL.J !== undefined ? String(row[COL.J] || "").trim().toUpperCase() : "";
+    const jval = COL.J !== undefined ? normalizeText(row[COL.J]).toUpperCase() : "";
     if (!jval) continue;
 
     if (COL.END !== undefined) {
@@ -624,7 +685,7 @@ async function analyzeFiles() {
                 </h4>
                 <table class="result-table">
                   <tr><th>Метрика</th><th style="text-align:right">Кол-во</th><th style="text-align:right">%</th></tr>
-                  <tr><td>ИНН с окончанием в П1</td><td style="text-align:right">${r.denominator.toLocaleString('ru-RU')}</td><td>—</td></tr>
+                  <tr><td>ИНН с окончанием в периоде</td><td style="text-align:right">${r.denominator.toLocaleString('ru-RU')}</td><td>—</td></tr>
                   <tr style="background:#faf5ff;color:#6d28d9"><td>🔄 Продлились</td><td style="text-align:right">${r.renewalCount}</td><td>${r.renewalPct}%</td></tr>
                   <tr style="background:#f0fdf4;color:#166534"><td>✅ Удержались</td><td style="text-align:right">${r.retainedCount}</td><td>${r.retainedPct}%</td></tr>
                   <tr style="background:#fff1f2;color:#b91c1c"><td>❌ Отвалились</td><td style="text-align:right">${r.lapsedCount}</td><td>${r.lapsedPct}%</td></tr>
@@ -640,7 +701,7 @@ async function analyzeFiles() {
       <h3 style="text-align:center; color:#7c3aed;">По ИНН — Продление / Удержание / Отвал</h3>
       <table class="result-table">
         <tr><th>Метрика</th><th style="text-align:right">Кол-во</th><th style="text-align:right">%</th></tr>
-        <tr><td>ИНН с окончанием серта в П1</td><td style="text-align:right">${renewal.denominator.toLocaleString('ru-RU')}</td><td>—</td></tr>
+        <tr><td>ИНН с окончанием серта в периоде</td><td style="text-align:right">${renewal.denominator.toLocaleString('ru-RU')}</td><td>—</td></tr>
         <tr style="background:#faf5ff;color:#6d28d9"><td>🔄 Продлились</td><td style="text-align:right">${renewal.renewalCount}</td><td>${renewal.renewalPct}%</td></tr>
         <tr style="background:#f0fdf4;color:#166534"><td>✅ Удержались</td><td style="text-align:right">${renewal.retainedCount}</td><td>${renewal.retainedPct}%</td></tr>
         <tr style="background:#fff1f2;color:#b91c1c"><td>❌ Отвалились</td><td style="text-align:right">${renewal.lapsedCount}</td><td>${renewal.lapsedPct}%</td></tr>
@@ -665,7 +726,7 @@ async function analyzeFiles() {
     const makeTable = (rows) => {
       if (!rows.length) return `<p style="color:#94a3b8; font-style:italic;">Нет записей</p>`;
       return `<table class="result-table" style="font-size:0.85em;">
-        <tr><th>ИНН</th><th>Оконч. в П1</th><th>Новый старт в П2</th><th>Причина</th></tr>
+        <tr><th>ИНН</th><th>Оконч. в периоде</th><th>Новый старт в периоде</th><th>Причина</th></tr>
         ${rows.map(r => `
           <tr>
             <td style="font-family:monospace">${r.inn}</td>
@@ -690,11 +751,11 @@ async function analyzeFiles() {
               Прошли фильтры (тариф / спецпред / удал.схема): <b>${dl.rowsPassedFilters.toLocaleString('ru-RU')}</b><br>
               Пропущено — нет ИНН: <b>${dl.rowsNoINN}</b><br>
               Пропущено — нет даты окончания: <b>${dl.rowsNoEnd}</b><br>
-              Пропущено — дата окончания вне П1: <b>${dl.rowsOutOfK1.toLocaleString('ru-RU')}</b><br>
-              <b>→ Уникальных ИНН попало в П1: ${dl.totalInK1.toLocaleString('ru-RU')}</b><br>
+              Пропущено — дата окончания вне периода: <b>${dl.rowsOutOfK1.toLocaleString('ru-RU')}</b><br>
+              <b>→ Уникальных ИНН попало в период: ${dl.totalInK1.toLocaleString('ru-RU')}</b><br>
               <hr style="border:none; border-top:1px solid #cbd5e1; margin:8px 0;">
-              Уникальных ИНН у которых найден новый серт в П2: <b>${dl.uniqueInnWithK2.toLocaleString('ru-RU')}</b><br>
-              Уникальных ИНН без нового серта в П2: <b>${(dl.totalInK1 - dl.uniqueInnWithK2).toLocaleString('ru-RU')}</b>
+              Уникальных ИНН у которых найден новый серт в периоде: <b>${dl.uniqueInnWithK2.toLocaleString('ru-RU')}</b><br>
+              Уникальных ИНН без нового серта в периоде: <b>${(dl.totalInK1 - dl.uniqueInnWithK2).toLocaleString('ru-RU')}</b>
             </div>
 
             <div>
@@ -722,16 +783,15 @@ async function analyzeFiles() {
     <div class="center">
       <h2>✅ Результат анализа</h2>
       <p style="font-size:1.1em; margin:20px 0; background:#f0f9ff; padding:14px 20px; border-radius:12px; display:inline-block; text-align:left; line-height:1.8;">
-        <strong>Период 1</strong>: ${p1s.toLocaleDateString('ru-RU')} — ${p1e.toLocaleDateString('ru-RU')}<br>
-        <strong>Период 2</strong>: ${p2s.toLocaleDateString('ru-RU')} — ${p2e.toLocaleDateString('ru-RU')}
+        <strong>Выбранный период</strong>: ${p1s.toLocaleDateString('ru-RU')} — ${p1e.toLocaleDateString('ru-RU')}
       </p>
       <div style="display:flex; flex-wrap:wrap; justify-content:center; gap:40px; margin-top:30px;">
         <div style="min-width:420px;">
           <h3 style="text-align:center; color:#1e40af;">По СНИЛС — Удержание</h3>
           <table class="result-table">
             <tr><th>Метрика</th><th style="text-align:right">Значение</th></tr>
-            <tr><td>СНИЛС с окончанием серта в П1</td><td>${setJ1.size.toLocaleString('ru-RU')}</td></tr>
-            <tr><td>Из них купили серт в П2</td><td>${matchJ.toLocaleString('ru-RU')}</td></tr>
+            <tr><td>СНИЛС с окончанием серта в периоде</td><td>${setJ1.size.toLocaleString('ru-RU')}</td></tr>
+            <tr><td>Из них купили серт в периоде</td><td>${matchJ.toLocaleString('ru-RU')}</td></tr>
             <tr style="background:#f0fdf4;color:#166534"><td><strong>% Удержания</strong></td><td><strong>${convJ}%</strong></td></tr>
           </table>
         </div>
