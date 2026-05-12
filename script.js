@@ -459,6 +459,7 @@ function calcRenewal(
   // Важно: окончание и новый старт считаются в одном и том же выбранном периоде
   // Ищем среди ВСЕХ строк (без фильтра по дате окончания) — нужен старт внутри периода
   const innK2Start = {};     // ближайшая дата начала нового серта в периоде
+  const setINN_K2 = new Set();
   const innK2RowIndex = {};
   let rowsFoundInK2 = 0;
 
@@ -467,12 +468,15 @@ function calcRenewal(
     if (!rowPassesSelectedFilters(row, includedQ, includedU, includedRemote)) continue;
 
     const inn = normalizeInn(row[COL.F]);
-    if (!inn || !setINN_K1.has(inn)) continue;
+    if (!inn) continue;
 
     const startDate = parseDate(row[COL.V]);
     if (!startDate) continue;
     // Новый сертификат должен начаться внутри выбранного периода
     if (startDate < p2s || startDate > p2e) continue;
+    setINN_K2.add(inn);
+
+    if (!setINN_K1.has(inn)) continue;
 
     // Берём самый ранний старт в периоде
     if (!innK2Start[inn] || startDate < innK2Start[inn]) {
@@ -559,6 +563,7 @@ function calcRenewal(
     rowsNoEnd,
     rowsOutOfK1,
     totalInK1: setINN_K1.size,
+    totalInK2: setINN_K2.size,
     rowsFoundInK2,
     uniqueInnWithK2: Object.keys(innK2Start).length,
     debugRenewed,
@@ -753,6 +758,7 @@ async function analyzeFiles() {
               Пропущено — нет даты окончания: <b>${dl.rowsNoEnd}</b><br>
               Пропущено — дата окончания вне периода: <b>${dl.rowsOutOfK1.toLocaleString('ru-RU')}</b><br>
               <b>→ Уникальных ИНН попало в период: ${dl.totalInK1.toLocaleString('ru-RU')}</b><br>
+              <b>→ Уникальных ИНН с началом серта в периоде: ${dl.totalInK2.toLocaleString('ru-RU')}</b><br>
               <hr style="border:none; border-top:1px solid #cbd5e1; margin:8px 0;">
               Уникальных ИНН у которых найден новый серт в периоде: <b>${dl.uniqueInnWithK2.toLocaleString('ru-RU')}</b><br>
               Уникальных ИНН без нового серта в периоде: <b>${(dl.totalInK1 - dl.uniqueInnWithK2).toLocaleString('ru-RU')}</b>
