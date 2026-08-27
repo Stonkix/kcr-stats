@@ -84,7 +84,7 @@ function normalizeInn(val) {
   return digits || noDecimalTail.toUpperCase();
 }
 
-function rowPassesSelectedFilters(row, includedQ, includedU, includedRemote) {
+function rowPassesSelectedFilters(row, includedQ, includedU, includedRemote, includedAA) {
   const passesSetFilter = (value, selectedSet, allowEmpty) => {
     if (!selectedSet) return true;
     if (selectedSet.size === 0) return false;
@@ -105,6 +105,11 @@ function rowPassesSelectedFilters(row, includedQ, includedU, includedRemote) {
   if (COL.REMOTE !== undefined && includedRemote) {
     const remoteVal = normalizeText(row[COL.REMOTE]);
     if (!passesSetFilter(remoteVal, includedRemote, true)) return false;
+  }
+
+  if (COL.AA !== undefined && includedAA) {
+    const aaVal = normalizeText(row[COL.AA]);
+    if (!passesSetFilter(aaVal, includedAA, true)) return false;
   }
 
   return true;
@@ -424,7 +429,8 @@ function calcRenewal(
   includedQ,
   includedU,
   gracePeriodDays,
-  includedRemote
+  includedRemote,
+  includedAA
 ) {
   if (COL.END === undefined) return null;
   const GRACE_MS = gracePeriodDays * 24 * 60 * 60 * 1000;
@@ -439,7 +445,7 @@ function calcRenewal(
   for (let i = 1; i < rows.length; i++) {
     const row = rows[i];
     rowsScanned++;
-    if (!rowPassesSelectedFilters(row, includedQ, includedU, includedRemote)) continue;
+    if (!rowPassesSelectedFilters(row, includedQ, includedU, includedRemote, includedAA)) continue;
     rowsPassedFilters++;
 
     const inn = normalizeInn(row[COL.F]);
@@ -465,7 +471,7 @@ function calcRenewal(
 
   for (let i = 1; i < rows.length; i++) {
     const row = rows[i];
-    if (!rowPassesSelectedFilters(row, includedQ, includedU, includedRemote)) continue;
+    if (!rowPassesSelectedFilters(row, includedQ, includedU, includedRemote, includedAA)) continue;
 
     const inn = normalizeInn(row[COL.F]);
     if (!inn) continue;
@@ -634,6 +640,9 @@ async function analyzeFiles() {
   const includedRemote = new Set();
   document.querySelectorAll("#remote-filters input:checked").forEach(cb => includedRemote.add(normalizeText(cb.value)));
 
+  const includedAA = new Set();
+  document.querySelectorAll("#aa-filters input:checked").forEach(cb => includedAA.add(normalizeText(cb.value)));
+
   const allRemoteValues = new Set();
   if (COL.REMOTE !== undefined) {
     for (let i = 1; i < allData.length; i++) {
@@ -649,7 +658,7 @@ async function analyzeFiles() {
   let setJ1 = new Set(), setJ2 = new Set();
   for (let i = 1; i < allData.length; i++) {
     const row = allData[i];
-    if (!rowPassesSelectedFilters(row, includedQ, includedU, includedRemote)) continue;
+    if (!rowPassesSelectedFilters(row, includedQ, includedU, includedRemote, includedAA)) continue;
 
     const jval = COL.J !== undefined ? normalizeText(row[COL.J]).toUpperCase() : "";
     if (!jval) continue;
@@ -666,7 +675,7 @@ async function analyzeFiles() {
   const convJ = setJ1.size ? (matchJ / setJ1.size * 100).toFixed(2) : "0";
 
   // --- Расчёт по ИНН ---
-  const renewal = calcRenewal(allData, p1s, p1e, p2s, p2e, includedQ, includedU, gracePeriodDays, includedRemote);
+  const renewal = calcRenewal(allData, p1s, p1e, p2s, p2e, includedQ, includedU, gracePeriodDays, includedRemote, includedAA);
   lastExportData = { renewal, header: allData[0] };
 
   // --- Разбивка по удалённой схеме ---
@@ -675,7 +684,7 @@ async function analyzeFiles() {
     const breakdownItems = [];
     for (const remVal of Array.from(includedRemote).sort()) {
       const singleSet = new Set([remVal]);
-      const r = calcRenewal(allData, p1s, p1e, p2s, p2e, includedQ, includedU, gracePeriodDays, singleSet);
+      const r = calcRenewal(allData, p1s, p1e, p2s, p2e, includedQ, includedU, gracePeriodDays, singleSet, includedAA);
       if (r) breakdownItems.push({ label: remVal, r });
     }
     if (breakdownItems.length > 0) {
